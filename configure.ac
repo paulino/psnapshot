@@ -1,4 +1,4 @@
-AC_INIT([psnapshot], [1.0])
+AC_INIT([psnapshot], [1.0.0])
 
 AM_INIT_AUTOMAKE([foreign])
 
