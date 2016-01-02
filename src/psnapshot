@@ -1,0 +1,210 @@
+#!/usr/bin/python3
+# -*- coding: utf-8 -*-
+"""
+ Copyright 2016 - Paulino Ruiz de Clavijo Vázquez <paulino@dte.us.es>
+ This file is part of the psnapshot project.
+ 
+ This program is free software: you can redistribute it and/or modify
+ it under the terms of the of the GNU General Public License as published by
+ the Free Software Foundation.
+
+ This program is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ GNU General Public License for more details.
+
+ You should have received a copy of the GNU General Public License
+ along with this program.  If not, see <http://www.gnu.org/licenses/>.
+"""
+
+# Returns codes:
+#  1     bad config file
+#  255   command line error
+
+import os
+import sys
+import time
+import datetime
+
+USAGE = """psnapshot [options]
+  -n         Dry run, no execute any command
+  -c <file>  Use this config file
+  -v         Verbose
+"""
+
+VERSION = 1
+TMP_DIR = "tmp_dir"
+CONFIG_FILE = "/etc/psnapshot.conf"  # Default config file
+LOCKFILE = "/var/run/psnapshot.pid"
+DRY_RUN = False
+
+
+# Process command line
+
+def main():
+	## Main script
+	PSS_read_config()
+	PSS_parse_commandline()
+	if PSS_check():
+		PSS_run_rsync()
+		if CLEAN_ENABLE:
+			PSS_clean()
+
+def print_verbose(level,string):
+	if level <= VERBOSE:
+		print(string)
+
+def PSS_parse_commandline():
+	i=1
+	while i < len(sys.argv):
+		if sys.argv[i]=="-v":
+			globals()["VERBOSE"] = 3
+			print("Verbose level 3 from command line")
+		elif sys.argv[i]=="-n":
+			print("Running in dry mode")
+			globals()["DRY_RUN"] = True
+		elif sys.argv[i] == "-c":
+			i += 1
+			if i >= len(sys.argv):
+				print("** Error: Missing config file command line",file=sys.stderr)
+				exit(255)
+			globals()["CONFIG_FILE"] = sys.argv[i]
+		else: 
+			print("** Error: unknow argument '%s' in command line. Usage:" % sys.argv[i],file=sys.stderr)
+			print(USAGE)
+			exit(255)
+		i += 1
+
+# Read config
+def PSS_read_config():
+	with open(CONFIG_FILE) as input_file:    
+		p_str = input_file.read()
+	try:
+		exec(p_str, globals())
+	except BaseException as e:
+		print("** Error in file config file %s:" % CONFIG_FILE,file=sys.stderr)
+		print(str(e),file=sys.stderr)
+		exit(1)
+
+# Functions
+
+def PSS_check():
+	# Check if other instance is running
+	if os.path.isfile(LOCKFILE): 
+		with open(LOCKFILE) as file_lock:
+			pid=file_lock.readline()
+		try:
+			os.kill(int(pid), 0)  # Check if proccess exists
+		except OSError:
+			True  # Ok, any proccess with this PID
+		except ValueError:
+			True # Assumes no pid in file
+		else:
+			print("** Error: Lock PID file:%s exists. Aborting." % LOCKFILE,file=sys.stderr)
+			return False
+	if not DRY_RUN:	
+		with open(LOCKFILE,"w") as file_lock:
+			file_lock.write(str(os.getpid()))
+	
+	# Check if some config options are valid
+	# TODO:Check other things ...
+	res=True
+	if not os.path.isdir(ROOT_PATH):
+		print("** Error: not valid ROOT_PATH='%s' in config file" % ROOT_PATH,file=sys.stderr);
+		res=False
+	return res
+
+def PSS_run_cmd(cmd):
+	# Command line run wrapper
+	res = 0
+	print_verbose(1,cmd)
+	if not DRY_RUN:
+		res = os.system(cmd)
+	return res
+
+def PSS_run_rsync():
+	res = 0
+	new_dir = ROOT_PATH + "/" + time.strftime("%Y-%m-%d-%H-%M-%S", time.localtime())
+	tmp_dir = ROOT_PATH + "/" + TMP_DIR
+	
+	# get last backup
+	dirs=os.listdir(ROOT_PATH)
+	if len(dirs) == 0:
+		cmd = "mkdir %s 2> /dev/null" % tmp_dir
+		res += PSS_run_cmd(cmd)
+	else:
+		dirs.sort()
+		# copy files using hard links
+		flags="-al"
+		if VERBOSE >1 :
+			flags += "v"
+		cmd = "cp %s %s/%s %s" % (flags,ROOT_PATH,dirs[-1],tmp_dir)
+		res += PSS_run_cmd(cmd)	# start rsync
+	for org in BACKUPS:
+		print_verbose(2," - Procesing "+org)
+		dst = "%s/%s" % (tmp_dir,BACKUPS[org]["destination"])
+		flags="-a --numeric-ids --delete"
+		if VERBOSE > 2 :
+			flags +=" -v"
+		if "excludes" in BACKUPS[org]:
+			for exclude in BACKUPS[org]["excludes"]:
+				flags += " --exclude='%s'" % exclude
+		cmd = "rsync %s %s %s" % (flags,org,dst) 
+		res += PSS_run_cmd(cmd)
+	cmd = "mv %s %s" % (tmp_dir,new_dir)
+	res += PSS_run_cmd(cmd)
+	if res > 0:
+		print("** Errors detected: %d" % res,file=sys.stderr)
+
+
+def PSS_clean():
+	# Slots start at midnight
+	date_a = datetime.datetime.combine(
+		datetime.datetime.now(),datetime.time(23,59,59))
+	date_b = date_a 
+	date_offset = date_a
+	dir_list = os.listdir(ROOT_PATH)
+	dir_list.sort()
+	keep = []
+	for keep_rule in KEEP_RULES:
+		keep_rule_count = keep_rule[0]
+		keep_rule_delta = datetime.timedelta(
+			days=keep_rule[1])
+		date_a = date_offset
+		date_b = date_b - keep_rule_delta
+		date_offset -= datetime.timedelta(
+			days=keep_rule[0]*keep_rule[1])
+		print_verbose(2,"Keep rule "+str(keep_rule))
+		
+		while keep_rule_count > 0:
+			print_verbose(2," - Slot %-2d: [%19.19s, %19.19s]" % 
+				 (keep_rule_count,date_a,date_b))
+			for dir_name in dir_list:
+				year,month,day,hour,minute,second = dir_name.split("-")
+				date_dir = datetime.datetime(
+					int(year),int(month),int(day),
+					int(hour),int(minute),int(second))
+				if date_dir <= date_a and date_dir > date_b :
+					keep.append(dir_name)
+					print_verbose(2,"    * Keep: "+ dir_name)
+					break
+				
+			keep_rule_count -= 1
+			date_a -= keep_rule_delta
+			date_b -= keep_rule_delta
+	deletes = []
+	for dir_name in dir_list:
+		if not dir_name in keep:
+			deletes.append(dir_name)
+	print_verbose(2,"Clean results: keeps %d , delete %d" % (len(keep),len(deletes)))
+	print_verbose(2,"Delete list:")
+	for dir_name in deletes:
+		print_verbose(2," - %s" % dir_name)
+	for dir_name in deletes:
+		PSS_run_cmd("rm -rf %s/%s" % (ROOT_PATH,dir_name))
+
+
+if __name__ == '__main__':
+	main()
+	if os.path.isfile(LOCKFILE):
+		os.remove(LOCKFILE)

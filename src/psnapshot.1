@@ -1,0 +1,145 @@
+.\" -*- nroff -*-
+.\" Copyright 2016 by Paulino Ruiz de Clavijo All Rights Reserved.
+.\" This file may be copied under the terms of the GNU Public License.
+.\"
+.TH "psnapshot" "1" "jan 2016" "version 1.0" ""
+
+.SH "NAME"
+psnapshot \(em a simplified backup tool inspired in 
+.I rsnapshot 
+and written in python
+
+.SH "SYNOPSIS"
+
+.B psnapshot
+[OPTIONS] 
+
+.SH "DESCRIPTION"
+
+.B psnapshot 
+is a command line tool written in python to create snapshots of several
+directories. The method used to backup it is similar to 
+.I backintime
+or
+.I rsnapshot 
+but it solves some issues.
+
+Like 
+.Irsnapshot
+or 
+.Ibackintime
+psnapshot uses rsync to synchronize files keeping hardlinks 
+for files not changed saving space. 
+The main difference with rsnapshot is the no rotation of snapshots.
+psnapshot never renames the created directories for the snapshots. 
+This improves the synchronization of the backups over the network when
+several backup mirrors are required.
+
+.B psnapshot 
+also includes a clean up 
+algorithm based on temporary slots. 
+The algorithm is a simplified version of *backintime* algorithm. 
+The clean up can be disabled in the configuration file using `CLEAN_ENABLE = False`.
+
+See 
+.I Clean up process
+in the section below.
+
+
+.PP 
+
+
+.PP 
+.SH "OPTIONS"
+.TP
+
+.BR -v 
+Verbose. Verbosity can also be set in config file.
+
+.TP
+.BR -n
+Run in dry mode, the commands are not executed but they are shown to standard output
+
+.TP
+.BR -c " \fI<file>\fP"
+Use alternative config file instead of /etc/psnapshot.conf
+
+
+.SH "SETUP"
+
+All valid options for the configuration file 
+.I /etc/psnapshot.conf
+are included in the example of configuration installed by 
+default.
+
+
+.SH "CLEAN UP PROCESS"
+
+
+The clean up process included uses temporary slots fixed at midnight. 
+The number of slots and the width are defined by a pair of integers: (slots, width). 
+The first integer 
+.I slots
+is the number of snapshot to keep and the second 
+.I width
+is a delta time to calculate next slot. 
+
+Only one snapshot that match in the slot is kept. This is applied for each slot. You can define all slots as you want using a syntax of pairs (slots,width) in the configuration file.
+
+In the following configuration example, the behavior is: to keep 10 snapshot per day and continue keeping 12 snapshot, one each 30 days, etc.
+
+.RS
+    KEEP_RULES = (
+        (10,1),  # keep first 15 slots of one day
+        (12,30), # keep next 12 slots of 30 days
+        (3,365)  # keep next 3 of 365 days
+    )
+.RE   
+  
+If you are unsure how this works, run psnapshot in dry mode with 
+the verbosity level set to 2. In this mode, 
+the standard output shows the slots and the snapshots candidates to be removed.
+
+
+.SH FILES
+
+.TP
+.I /etc/psnapshot 
+
+Default configuration file. 
+You can use -c to override this file
+
+.SH EXIT VALUES
+
+.TP
+.BR 0 
+Success
+
+.TP
+.BR 1
+Syntax error in configuration file
+
+.TP
+.BR 255
+Command line error
+
+
+.PP 
+.SH "CREDITS"
+.PP 
+.B psnapshot 
+is distributed under the GNU public license.  See the file
+COPYING for details.
+
+.PP 
+.SH "AUTHOR"
+
+.B psnapshot
+has been developed by Paulino Ruiz de Clavijo <paulino@dte.us.es>.
+
+
+.SH BUGS
+Please, report them to the author at https://github.com/paulino/psnapshot
+
+.SH SEE ALSO
+.BR rsync (8)
