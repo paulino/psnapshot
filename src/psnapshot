@@ -136,7 +136,7 @@ def PSS_run_rsync():
 		dirs.sort()
 		# copy files using hard links
 		flags="-al"
-		if VERBOSE >1 :
+		if VERBOSE > 2 :
 			flags += "v"
 		cmd = "cp %s %s/%s %s" % (flags,ROOT_PATH,dirs[-1],tmp_dir)
 		res += PSS_run_cmd(cmd)	# start rsync
