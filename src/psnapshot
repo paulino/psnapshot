@@ -160,7 +160,7 @@ def PSS_run_rsync():
 def PSS_clean():
 	# Slots start at midnight
 	date_a = datetime.datetime.combine(
-		datetime.datetime.now(),datetime.time(23,59,59))
+		datetime.datetime.now(),datetime.time(0,0,0)) + datetime.timedelta(days=1)
 	date_b = date_a 
 	dir_list = os.listdir(ROOT_PATH)
 	dir_list.sort()
