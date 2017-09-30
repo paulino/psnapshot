@@ -37,14 +37,24 @@ TMP_DIR = "tmp_dir"
 CONFIG_FILE = "/etc/psnapshot.conf"  # Default config file
 LOCKFILE = "/var/run/psnapshot.pid"
 DRY_RUN = False
+VERBOSE = 0
 
 
 # Process command line
 
 def main():
 	## Main script
-	PSS_read_config()
-	PSS_parse_commandline()
+	arguments = PSS_parse_commandline()
+	for key in arguments:
+		globals()[key] = arguments[key]	
+	if "CONFIG_FILE" in arguments:
+		PSS_read_config(arguments["CONFIG_FILE"])
+	else:
+		PSS_read_config(globals()["CONFIG_FILE"])
+	# Override some config from command line
+	for key in arguments:
+		globals()[key] = arguments[key]
+	
 	if PSS_check():
 		PSS_run_rsync()
 		if CLEAN_ENABLE:
@@ -55,34 +65,38 @@ def print_verbose(level,string):
 		print(string)
 
 def PSS_parse_commandline():
+	# returns a command line params dict
+	res = dict()
 	i=1
 	while i < len(sys.argv):
-		if sys.argv[i]=="-v":
-			globals()["VERBOSE"] = 3
+		if sys.argv[i] == "-v":
+			res["VERBOSE"] = 3
 			print("Verbose level 3 from command line")
-		elif sys.argv[i]=="-n":
+		elif sys.argv[i] == "-n":
 			print("Running in dry mode")
-			globals()["DRY_RUN"] = True
+			res["DRY_RUN"] = True
 		elif sys.argv[i] == "-c":
 			i += 1
 			if i >= len(sys.argv):
 				print("** Error: Missing config file command line",file=sys.stderr)
 				exit(255)
-			globals()["CONFIG_FILE"] = sys.argv[i]
+			res["CONFIG_FILE"] = sys.argv[i]
 		else: 
 			print("** Error: unknow argument '%s' in command line. Usage:" % sys.argv[i],file=sys.stderr)
 			print(USAGE)
 			exit(255)
 		i += 1
+	return res;
 
 # Read config
-def PSS_read_config():
-	with open(CONFIG_FILE) as input_file:    
+def PSS_read_config(file_name):
+	print_verbose(1,"Reading config file %s" % file_name)
+	with open(file_name) as input_file:
 		p_str = input_file.read()
 	try:
 		exec(p_str, globals())
 	except BaseException as e:
-		print("** Error in file config file %s:" % CONFIG_FILE,file=sys.stderr)
+		print("** Error in file config file %s:" % file_name,file=sys.stderr)
 		print(str(e),file=sys.stderr)
 		exit(1)
 
